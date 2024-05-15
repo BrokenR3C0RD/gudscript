@@ -1,2 +1,1 @@
-var t = (a + b * 2) << 1 == c && (d > e || f != g) ? x : y
-"Hello, world! ${5 * 5}"
+10 + []

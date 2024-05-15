@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:gudscript/src/error.dart';
 import 'package:gudscript/src/lexer.dart';
 import 'package:gudscript/src/parser.dart';
 
@@ -7,20 +8,14 @@ void main() {
   final file = File('test.gud');
   final string = file.readAsStringSync();
 
-  print('[*] Input:');
-  print(string);
-  print('');
-  final tokens = Lexer.fromString(string, url: file.uri).tokenize().toList();
-  print('[*] Tokens:');
-  print(tokens.join('\n'));
-  print('');
-
-  final watch = Stopwatch()..start();
-  const count = 100000;
-  for (var i = 0; i < count; i++) {
+  print('[*] Input:\n$string\n');
+  try {
+    final tokens = Lexer.fromString(string, url: file.uri).tokenize().toList();
+    print('[*] Tokens:\n');
+    print(tokens.join('\n'));
     final result = Parser(tokens).statement();
-    if (i == 0) print(result);
+    print('[*] AST:\n$result');
+  } on SyntaxError catch (e) {
+    stderr.writeln(e.toString(color: true));
   }
-  watch.stop();
-  print('Average parse time: ${watch.elapsedMilliseconds / count}ms');
 }

@@ -1,3 +1,4 @@
+import 'package:gudscript/src/error.dart';
 import 'package:gudscript/src/tokens.dart';
 import 'package:source_span/source_span.dart';
 
@@ -47,17 +48,6 @@ const nine = 0x39;
 const dollar = 0x24;
 const underscore = 0x5F;
 const backslash = 0x5C;
-
-class SyntaxException implements Exception {
-  final SourceSpan span;
-  final String message;
-
-  SyntaxException(this.span, this.message);
-
-  @override
-  String toString() =>
-      'SyntaxException: $message\n  --> ${span.start.toolString}\n${span.highlight()}';
-}
 
 class Lexer {
   final SourceFile source;
@@ -118,20 +108,20 @@ class Lexer {
       codeUnit == underscore;
 
   // Parsers start here
-  SpannedToken? newline() {
+  Token? newline() {
     if (!Newline.valid.contains(currentChar)) return null;
 
     final start = offset;
     if (currentChar == '\r' && peekChar == '\n') {
       offset += 2;
-      return SpannedToken(spanFrom(start), Newline('\r\n'));
+      return Newline('\r\n', spanFrom(start));
     } else {
       offset++;
-      return SpannedToken(spanFrom(start), Newline('\r\n'));
+      return Newline('\r\n', spanFrom(start));
     }
   }
 
-  SpannedToken? identifier() {
+  Token? identifier() {
     if (testBase10(current)) return null;
 
     final start = offset;
@@ -140,34 +130,34 @@ class Lexer {
 
     final span = spanFrom(start);
     if (Keyword.keywords.contains(id)) {
-      return SpannedToken(span, Keyword(id));
+      return Keyword(id, span);
     } else {
-      return SpannedToken(span, Identifier(id));
+      return Identifier(id, span);
     }
   }
 
-  SpannedToken? comment() {
+  Token? comment() {
     if (currentChar != '/' || peekChar != '/') return null;
 
     final start = offset;
     offset += 2;
 
     final comment = eatWhile((char) => !_newlines.contains(char));
-    return SpannedToken(spanFrom(start), Comment(comment));
+    return Comment(comment, spanFrom(start));
   }
 
-  SpannedToken? char() {
+  Token? char() {
     final char = currentChar;
     if (!Char.valid.contains(char)) return null;
 
-    return SpannedToken(spanFrom(offset++), Char(char));
+    return Char(char, spanFrom(offset++));
   }
 
-  SpannedToken? multiChar() {
+  Token? multiChar() {
     final str = substring(2);
     if (str == null || !MultiChar.valid.contains(str)) return null;
 
-    return SpannedToken(spanFrom((offset += 2) - 2), MultiChar(str));
+    return MultiChar(str, spanFrom((offset += 2) - 2));
   }
 
   bool _getDigitsRadix(StringBuffer buffer, bool Function(int) digitTest) {
@@ -180,11 +170,16 @@ class Lexer {
         if (peek == null || !digitTest(peek!)) {
           if (peek == underscore) {
             final underscores = count((char) => char == underscore);
-            throw SyntaxException(source.span(offset, offset + underscores),
-                'only one underscore can be used as a numeric separator');
+            throw SyntaxError(
+              'only one underscore can be used as a numeric separator',
+              source.span(offset, offset + underscores),
+              primaryLabel: 'only one allowed',
+            );
           } else {
-            throw SyntaxException(spanFrom(offset),
-                'number literals cannot end with a numeric separator');
+            throw SyntaxError(
+                'number literals cannot end with a numeric separator',
+                spanFrom(offset),
+                primaryLabel: 'remove this');
           }
         } else {
           offset += 1;
@@ -195,51 +190,38 @@ class Lexer {
     return true;
   }
 
-  SpannedToken _radixLiteral(bool Function(int) digitTest, int radix) {
+  Token _radixLiteral(bool Function(int) digitTest, NumberLiteralType type) {
     final start = offset;
     offset += 2;
 
     final buffer = StringBuffer();
     if (!_getDigitsRadix(buffer, digitTest)) {
-      throw SyntaxException(
-          source.span(start, start), 'invalid base-$radix literal');
+      throw SyntaxError(
+          'invalid base-${type.radix} literal', source.span(start, start));
     }
 
-    final value = int.tryParse(buffer.toString(), radix: radix);
-    if (value == null) {
-      throw SyntaxException(
-          spanFrom(start),
-          'invalid base-$radix literal\n'
-          'help: this number might be too large to fit in a 64-bit integer.');
-    }
-
-    return SpannedToken(spanFrom(start), NumberLiteral(value));
+    return NumberLiteral(buffer.toString(), spanFrom(start), type);
   }
 
-  SpannedToken _decLiteral() {
+  Token _decLiteral() {
     final start = offset;
     final buffer = StringBuffer();
     _getDigitsRadix(buffer, testBase10);
 
     if (currentChar != '.' && currentChar.toLowerCase() != 'e') {
       // Integer literal
-      final value = int.tryParse(buffer.toString());
-      if (value == null) {
-        throw SyntaxException(
-            spanFrom(start),
-            'invalid integer literal\n'
-            'help: this number might be too large to fit in a 64-bit integer\n'
-            'try: `${buffer.toString()}.0`');
-      }
-
-      return SpannedToken(spanFrom(start), NumberLiteral(value));
+      return NumberLiteral(
+          buffer.toString(), spanFrom(start), NumberLiteralType.integer);
     }
 
     if (currentChar == '.') {
       buffer.write('.');
       offset += 1;
       if (!_getDigitsRadix(buffer, testBase10)) {
-        throw SyntaxException(spanFrom(offset), 'invalid decimal literal');
+        throw SyntaxError(
+          'invalid decimal literal',
+          spanFrom(offset),
+        );
       }
     }
 
@@ -253,29 +235,28 @@ class Lexer {
       }
 
       if (!_getDigitsRadix(buffer, testBase10)) {
-        throw SyntaxException(spanFrom(offset), 'invalid decimal literal');
+        throw SyntaxError(
+          'invalid decimal literal',
+          spanFrom(offset),
+        );
       }
     }
 
-    final value = double.tryParse(buffer.toString());
-    if (value == null) {
-      throw SyntaxException(spanFrom(start), 'invalid decimal literal');
-    }
-
-    return SpannedToken(spanFrom(start), NumberLiteral(value));
+    return NumberLiteral(
+        buffer.toString(), spanFrom(start), NumberLiteralType.decimal);
   }
 
-  SpannedToken? number() {
+  Token? number() {
     if (!testBase10(current)) return null;
 
     return switch (substring(2)) {
-      '0b' => _radixLiteral(testBase2, 2),
-      '0x' => _radixLiteral(testBase16, 16),
+      '0b' => _radixLiteral(testBase2, NumberLiteralType.binary),
+      '0x' => _radixLiteral(testBase16, NumberLiteralType.hex),
       _ => _decLiteral()
     };
   }
 
-  SpannedToken? _plaintext(int quote) {
+  Token? _plaintext(int quote) {
     if (_eos || current == quote || current == dollar) return null;
 
     final start = offset;
@@ -330,7 +311,10 @@ class Lexer {
         }
 
         if (char == null) {
-          throw SyntaxException(spanFrom(-1), 'invalid character escape');
+          throw SyntaxError(
+            'invalid character escape',
+            spanFrom(-1),
+          );
         }
         buffer.write(char);
       } else {
@@ -343,94 +327,75 @@ class Lexer {
       return null;
     }
 
-    return SpannedToken(spanFrom(start), PlainText(buffer.toString()));
+    return PlainText(buffer.toString(), spanFrom(start));
   }
 
-  Iterable<SpannedToken>? _templateExpr() {
+  Iterable<Token>? _templateExpr() {
     if (current != dollar) return null;
-    final start = offset;
 
-    final dollarTok = SpannedToken(spanFrom(offset++), Char(r'$'));
+    final dollarTok = Char(currentChar, spanFrom(offset++));
 
     if (currentChar == '{') {
-      final braceTok = SpannedToken(spanFrom(offset++), Char('{'));
+      final braceTok = Char(currentChar, spanFrom(offset++));
       final tokens = tokenize()
-          .takeWhile((_) => currentChar != '}')
+          .takeWhile((_) => !_eos && currentChar != '}')
           .toList(growable: false);
-
-      if (tokens.isEmpty) {
-        throw SyntaxException(
-            source.span(offset, offset), 'expected expression');
-      }
-
-      if (currentChar != '}') {
-        throw SyntaxException(source.span(offset, offset), 'expected }');
-      }
 
       return [
         dollarTok,
         braceTok,
         ...tokens,
-        SpannedToken(spanFrom(offset++), Char('}'))
+        if (!_eos && currentChar == '}') Char(currentChar, spanFrom(offset++))
       ];
     } else {
       final ident = identifier();
-      if (ident == null) {
-        throw SyntaxException(spanFrom(start + 1), 'expected identifier');
-      }
-      return [dollarTok, ident];
+      return [dollarTok, if (ident != null) ident];
     }
   }
 
-  Iterable<SpannedToken> _string() sync* {
-    final start = offset;
+  Iterable<Token> _string() sync* {
     final quote = currentChar;
     final quoteCode = current;
-    offset++;
 
-    yield SpannedToken(spanFrom(start), Char(quote));
+    yield Char(quote, spanFrom(offset++));
 
     while (!_eos && current != quoteCode) {
       final token = _plaintext(quoteCode) ?? _templateExpr();
       if (token == null) {
-        throw SyntaxException(
-            source.span(offset, offset), 'invalid character');
-      } else if (token is SpannedToken) {
+        throw SyntaxError(
+          'unrecognized token',
+          source.span(offset, offset),
+        );
+      } else if (token is Token) {
         yield token;
       } else {
-        for (final tok in token as Iterable<SpannedToken>) {
+        for (final tok in token as Iterable<Token>) {
           yield tok;
         }
       }
     }
 
-    if (_eos || currentChar != quote) {
-      throw SyntaxException(
-          spanFrom(start),
-          'unterminated string literal\n'
-          'hint: add `$quote` to the end of your string.');
+    if (!_eos) {
+      yield Char(currentChar, spanFrom(offset));
+      offset++;
     }
-
-    yield SpannedToken(spanFrom(offset), Char(currentChar));
-    offset++;
   }
 
-  Iterable<SpannedToken>? string() =>
+  Iterable<Token>? string() =>
       switch (currentChar) { '"' || "'" => _string(), _ => null };
 
   void _trimSpace() {
     offset += count((char) => _spaces.contains(char));
   }
 
-  Iterable<SpannedToken> tokenize() sync* {
+  Iterable<Token> tokenize() sync* {
     while (!done) {
       _trimSpace();
 
       if (done) return;
       if (_eos) {
         offset++;
-        yield SpannedToken(
-            source.span(source.length - 1, source.length - 1), Eos());
+        yield Eos(source.span(source.length - 1, source.length - 1));
         return;
       }
 
@@ -446,8 +411,10 @@ class Lexer {
       } else {
         final str = string();
         if (str == null) {
-          throw SyntaxException(
-              source.span(offset, offset), 'unexpected or invalid token');
+          throw SyntaxError(
+            'unrecognized token',
+            source.span(offset, offset),
+          );
         }
 
         for (final tok in str) {

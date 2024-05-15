@@ -38,20 +38,13 @@ String _toFormattedChar(int code) {
   return String.fromCharCode(code);
 }
 
-abstract class Token<V> {
-  final V value;
+abstract class Token {
+  final String value;
+  final FileSpan span;
 
-  Token(this.value);
+  Token(this.value, this.span);
 
-  String get prettyValue {
-    if (value is String) {
-      return "'${_toReadableString(value as String)}'";
-    } else if (value is List) {
-      return '[${(value as List).join(', ')}]';
-    } else {
-      return value.toString();
-    }
-  }
+  String get readableName => '`${_toReadableString(value)}`';
 
   @override
   int get hashCode => Object.hash(runtimeType, value);
@@ -66,73 +59,69 @@ abstract class Token<V> {
   }
 
   @override
-  String toString() => '$runtimeType: $prettyValue';
-}
-
-class SpannedToken<T extends Token> {
-  final T token;
-  final FileSpan span;
-
-  SpannedToken(this.span, this.token);
-
-  @override
   String toString() =>
-      '${token.runtimeType}[${span.start.toolString}]: ${token.prettyValue}';
-
-  @override
-  bool operator ==(Object other) {
-    if (other is T) {
-      return token == other;
-    } else if (other is SpannedToken) {
-      return token.hashCode == other.hashCode;
-    } else {
-      return false;
-    }
-  }
-
-  SpannedToken<U>? tryCast<U extends Token>() {
-    if (token is! U) {
-      return null;
-    }
-
-    return SpannedToken(span, token as U);
-  }
-
-  @override
-  int get hashCode => Object.hash(span.hashCode, token.hashCode);
+      '$runtimeType[${span.start.toolString}]: ${_toReadableString(value)}';
 }
 
-class Eos extends Token<void> {
-  Eos() : super(null);
+class Eos extends Token {
+  Eos(FileSpan span) : super('', span);
+
+  @override
+  String get readableName => 'end of source';
 }
 
-class Newline extends Token<String> {
+class Newline extends Token {
   static const valid = {
     '\r', // CR
     '\n', // LF
     '\u2028', // LS
     '\u2029' // PS
   };
-  Newline(super.value);
+
+  @override
+  String get readableName => 'newline';
+
+  Newline(super.value, super.span);
 }
 
-class Identifier extends Token<String> {
-  Identifier(super.value);
+class Identifier extends Token {
+  Identifier(super.value, super.span);
+
+  @override
+  String get readableName => 'identifier';
 }
 
-class NumberLiteral extends Token<num> {
-  NumberLiteral(super.value);
+enum NumberLiteralType {
+  integer(10, 'integer'),
+  decimal(10, 'floating-point'),
+  binary(2, 'binary'),
+  hex(16, 'hex');
+
+  final int radix;
+  final String name;
+  const NumberLiteralType(this.radix, this.name);
 }
 
-class Comment extends Token<String> {
-  Comment(super.value);
+class NumberLiteral extends Token {
+  final NumberLiteralType type;
+  NumberLiteral(super.value, super.span, this.type);
+
+  @override
+  String get readableName => '${type.name} literal';
 }
 
-class PlainText extends Token<String> {
-  PlainText(super.value);
+class Comment extends Token {
+  Comment(super.value, super.span);
 }
 
-class Char extends Token<String> {
+class PlainText extends Token {
+  PlainText(super.value, super.span);
+
+  @override
+  String get readableName => 'string text';
+}
+
+class Char extends Token {
   static const valid = {
     '!',
     '%',
@@ -155,13 +144,14 @@ class Char extends Token<String> {
     '{',
     '|',
     '}',
-    '~',
+    '[',
+    ']'
   };
 
-  Char(super.value);
+  Char(super.value, super.span);
 }
 
-class MultiChar extends Token<String> {
+class MultiChar extends Token {
   static const valid = {
     '&&',
     '**',
@@ -177,10 +167,10 @@ class MultiChar extends Token<String> {
     '||',
   };
 
-  MultiChar(super.value);
+  MultiChar(super.value, super.span);
 }
 
-class Keyword extends Token<String> {
+class Keyword extends Token {
   static const keywords = {
     'break',
     'case',
@@ -201,5 +191,5 @@ class Keyword extends Token<String> {
     'when',
     'while',
   };
-  Keyword(super.value);
+  Keyword(super.value, super.span);
 }

@@ -1,88 +1,74 @@
+import 'package:gudscript/src/error.dart';
 import 'package:gudscript/src/lexer.dart';
 import 'package:gudscript/src/nodes.dart';
 import 'package:gudscript/src/tokens.dart';
-import 'package:source_span/source_span.dart';
 
-class GrammarException implements Exception {
-  final FileSpan span;
-  final String message;
-
-  GrammarException(this.message, this.span);
-
-  @override
-  String toString() =>
-      'GrammarException:\nerror: $message\n --> ${span.start.toolString}\n${span.highlight()}';
-}
-
-typedef SwitchEat<T extends Token<V>, V, N>
-    = Map<V, N Function(SpannedToken<T>)>;
-
-typedef SwitchFold<T extends Token<V>, V, E>
-    = Map<V, E Function(SpannedToken<T>, E)>;
+typedef SwitchEat<T extends Token, N> = Map<String, N Function(T)>;
+typedef SwitchFold<T extends Token, E> = Map<String, E Function(T, E)>;
 
 class Parser {
-  final List<SpannedToken> tokens;
+  final List<Token> tokens;
   int offset = 0;
 
   Parser(this.tokens);
   Parser.fromString(String source, {Object? url})
       : tokens = Lexer.fromString(source, url: url).tokenize().toList();
 
-  SpannedToken? peek() {
+  Token? peek() {
     final tok = tokens.elementAtOrNull(offset);
     return tok;
   }
 
-  SpannedToken<T>? eat<T extends Token>() {
-    final peek = this.peek()?.tryCast<T>();
+  T? eat<T extends Token>() {
+    final peek = this.peek();
 
-    if (peek == null) return null;
-
-    offset++;
-    return peek;
-  }
-
-  SpannedToken<T>? eatIfValue<T extends Token<V>, V>(V value) {
-    final peek = this.peek()?.tryCast<T>();
-    if (peek == null || peek.token.value != value) return null;
+    if (peek is! T) return null;
 
     offset++;
     return peek;
   }
 
-  SpannedToken<T>? eatIf<T extends Token>(bool Function(T)? test) {
-    final peek = this.peek()?.tryCast<T>();
+  T? eatIfValue<T extends Token>(String value) {
+    final peek = this.peek();
+    if (peek is! T || peek.value != value) return null;
 
-    if (peek == null) return null;
-    if (test != null && !test(peek.token)) {
+    offset++;
+    return peek;
+  }
+
+  T? eatIf<T extends Token>(bool Function(T)? test) {
+    final peek = this.peek();
+
+    if (peek is! T) return null;
+    if (test != null && !test(peek)) {
       return null;
     }
 
     offset++;
-    return SpannedToken(peek.span, peek.token);
+    return peek;
   }
 
-  N? eatSwitch<T extends Token<V>, V, N>(SwitchEat<T, V, N> switches) {
-    final tok = peek()?.tryCast<T>();
-    if (tok == null) return null;
+  N? eatSwitch<T extends Token, N extends Node>(SwitchEat<T, N> switches) {
+    final peek = this.peek();
+    if (peek is! T) return null;
 
-    final match = switches[tok.token.value];
+    final match = switches[peek.value];
     if (match == null) return null;
 
     offset++;
-    return match(SpannedToken(tok.span, tok.token));
+    return match(peek);
   }
 
-  E? switchFold<E extends Object, T extends Token<V>, V>(
-      E? initialValue, SwitchFold<T, V, E> cases) {
+  N? switchFold<T extends Token, N extends Node>(
+      N? initialValue, SwitchFold<T, N> cases) {
     if (initialValue == null) return null;
     var acc = initialValue;
 
     while (true) {
-      final peek = this.peek()?.tryCast<T>();
-      if (peek == null) return acc;
+      final peek = this.peek();
+      if (peek is! T) return acc;
 
-      final match = cases[peek.token.value];
+      final match = cases[peek.value];
       if (match == null) return acc;
       offset += 1;
 
@@ -90,7 +76,7 @@ class Parser {
     }
   }
 
-  E? fold<E>(E? initialValue, E? Function(E) accumulate) {
+  N? fold<N>(N? initialValue, N? Function(N) accumulate) {
     if (initialValue == null) return null;
     var acc = initialValue;
 
@@ -101,105 +87,117 @@ class Parser {
     }
   }
 
-  SpannedToken<Keyword>? keyword(String name) => eatIfValue(name);
-  SpannedToken<Char>? char(String char) => eatIfValue(char);
+  Keyword? keyword(String name) => eatIfValue(name);
+  Char? char(String char) => eatIfValue(char);
 
-  SpannedToken<Char> expectChar(String char) =>
-      expect(this.char(char), 'expected `$char`');
+  Char expectChar(String char) => expect(this.char(char), 'expected `$char`');
 
-  V expect<V>(V? value, [String message = 'unexpected token']) {
+  V expect<V>(V? value, [String? message]) {
     if (value == null) {
       final peek = this.peek();
       if (peek == null) {
-        throw StateError('parser error: expect() ran past end-of-source');
+        throw StateError('past end-of-source');
       }
-      throw GrammarException(message, peek.span);
+
+      throw SyntaxError(
+          message != null
+              ? 'expected $message, found ${peek.readableName}'
+              : 'unexpected ${peek.readableName}',
+          peek.span);
     }
 
     return value;
   }
 
-  SpannedToken<MultiChar>? multichar(String multichar) => eatIfValue(multichar);
-  SpannedToken<Keyword>? $break() => keyword('break');
-  SpannedToken<Keyword>? $case() => keyword('case');
-  SpannedToken<Keyword>? $continue() => keyword('continue');
-  SpannedToken<Keyword>? $default() => keyword('default');
-  SpannedToken<Keyword>? $do() => keyword('do');
-  SpannedToken<Keyword>? $else() => keyword('else');
-  SpannedToken<Keyword>? $false() => keyword('false');
-  SpannedToken<Keyword>? $for() => keyword('for');
-  SpannedToken<Keyword>? $if() => keyword('if');
-  SpannedToken<Keyword>? $in() => keyword('in');
-  SpannedToken<Keyword>? $null() => keyword('null');
-  SpannedToken<Keyword>? $on() => keyword('on');
-  SpannedToken<Keyword>? $return() => keyword('return');
-  SpannedToken<Keyword>? $switch() => keyword('switch');
-  SpannedToken<Keyword>? $true() => keyword('true');
-  SpannedToken<Keyword>? $var() => keyword('var');
-  SpannedToken<Keyword>? $when() => keyword('when');
-  SpannedToken<Keyword>? $while() => keyword('while');
+  MultiChar? multichar(String multichar) => eatIfValue(multichar);
+  Keyword? $break() => keyword('break');
+  Keyword? $case() => keyword('case');
+  Keyword? $continue() => keyword('continue');
+  Keyword? $default() => keyword('default');
+  Keyword? $do() => keyword('do');
+  Keyword? $else() => keyword('else');
+  Keyword? $false() => keyword('false');
+  Keyword? $for() => keyword('for');
+  Keyword? $if() => keyword('if');
+  Keyword? $in() => keyword('in');
+  Keyword? $null() => keyword('null');
+  Keyword? $on() => keyword('on');
+  Keyword? $return() => keyword('return');
+  Keyword? $switch() => keyword('switch');
+  Keyword? $true() => keyword('true');
+  Keyword? $var() => keyword('var');
+  Keyword? $when() => keyword('when');
+  Keyword? $while() => keyword('while');
 
-  Expression? grouping() {
+  Number? number() {
+    final token = eat<NumberLiteral>();
+    if (token == null) return null;
+
+    final num value;
+    try {
+      value = switch (token.type) {
+        NumberLiteralType.decimal => double.parse(token.value),
+        NumberLiteralType(radix: final radix) =>
+          int.parse(token.value, radix: radix),
+      };
+    } on FormatException catch (e) {
+      throw SyntaxError('invalid ${token.type.name} literal', token.span,
+          primaryLabel: e.message);
+    }
+
+    return Number(token.span, value);
+  }
+
+  Boolean? boolean() => switch ($true() ?? $false()) {
+        Keyword(value: 'true', span: final span) => Boolean(span, true),
+        Keyword(value: 'false', span: final span) => Boolean(span, false),
+        _ => null
+      };
+
+  Variable? variable() => switch (eat<Identifier>()) {
+        Identifier(value: final value, span: final span) =>
+          Variable(span, value),
+        _ => null
+      };
+
+  Expr? grouping() {
     final open = char('(');
     if (open == null) return null;
 
-    final expr = expect(expression(), 'expected expression');
+    final expr = expect(expression(), 'expression');
     final close = expectChar(')');
 
     final span = open.span.expand(close.span);
     return expr..span = span;
   }
 
-  Number? number() => switch (eat<NumberLiteral>()) {
-        SpannedToken(
-          span: final span,
-          token: NumberLiteral(value: final value)
-        ) =>
-          Number(span, value),
-        _ => null
-      };
+  Expr? primitive() => number() ?? variable() ?? boolean() ?? grouping();
 
-  Boolean? boolean() => switch ($true() ?? $false()) {
-        SpannedToken(span: final span, token: Keyword(value: 'true')) =>
-          Boolean(span, true),
-        SpannedToken(span: final span, token: Keyword(value: 'false')) =>
-          Boolean(span, false),
-        _ => null
-      };
-
-  Variable? variable() => switch (eat<Identifier>()) {
-        SpannedToken(span: final span, token: Identifier(value: final value)) =>
-          Variable(span, value),
-        _ => null
-      };
-
-  Expression? primitive() => number() ?? variable() ?? boolean() ?? grouping();
-
-  Expression? accessCall() => switchFold(primitive(), {
-        '.': (SpannedToken<Char> op, left) {
+  Expr? accessCall() => switchFold<Char, Expr>(primitive(), {
+        '.': (op, left) {
           final property = expect(variable());
           final span = left.span.expand(property.span);
           return MemberAccess(span, parent: left, property: property);
         },
-        '[': (SpannedToken<Char> op, left) {
+        '[': (op, left) {
           final property = expect(expression());
           final close = expectChar(']');
           final span = left.span.expand(close.span);
           return MemberAccess(span, parent: left, property: property);
         },
-        '(': (SpannedToken<Char> op, left) {
-          final parameters = <Expression>[];
+        '(': (op, left) {
+          final parameters = <Expr>[];
           var span = left.span;
 
           while (true) {
-            final expr = expect(char(')') ?? expression(), 'expected `)`');
-            if (expr is SpannedToken) {
+            final expr = expect(char(')') ?? expression(), 'expression, `)`');
+            if (expr is Char) {
               span = span.expand(expr.span);
               break;
             } else {
-              parameters.add(expr as Expression);
-              final next = expect(char(',') ?? char(')'), '`,` or `)`');
-              if (next.token.value == ')') {
+              parameters.add(expr as Expr);
+              final next = expect(char(',') ?? char(')'), '`,`, `)`');
+              if (next.value == ')') {
                 span = span.expand(expr.span);
                 break;
               }
@@ -210,54 +208,70 @@ class Parser {
         }
       });
 
-  Expression? postfix() => switchFold(accessCall(), {
-        '++': (SpannedToken<MultiChar> operator, left) {
+  Expr? postfix() => switchFold<MultiChar, Expr>(accessCall(), {
+        '++': (operator, left) {
           if (left is! AssignTarget) {
-            throw GrammarException(
-                'left-hand side must be assignable', left.span);
+            throw SyntaxError(
+                'left-hand side must be assignable', operator.span,
+                primaryLabel: 'this implicitly assigns',
+                secondarySpans: {
+                  left.span: '... but this cannot be assigned to',
+                });
           }
 
           final span = left.span.expand(operator.span);
           return PostfixIncrement(span, left);
         },
-        '--': (SpannedToken<MultiChar> operator, left) {
+        '--': (operator, left) {
           if (left is! AssignTarget) {
-            throw GrammarException(
-                'left-hand side must be assignable', left.span);
+            throw SyntaxError(
+                'left-hand side must be assignable', operator.span,
+                primaryLabel: 'this implicitly assigns',
+                secondarySpans: {
+                  left.span: '... but this cannot be assigned to',
+                });
           }
           final span = left.span.expand(operator.span);
           return PostfixDecrement(span, left);
         }
       });
 
-  Expression? prefix() =>
-      eatSwitch({
-        '!': (SpannedToken<Char> operator) {
+  Expr? prefix() =>
+      eatSwitch<Char, Expr>({
+        '!': (operator) {
           final right = expect(prefix(), 'expression');
           final span = operator.span.expand(right.span);
           return Not(span, expression: right);
         },
-        '-': (SpannedToken<Char> operator) {
+        '-': (operator) {
           final right = expect(prefix(), 'expression');
           final span = operator.span.expand(right.span);
           return Negate(span, expression: right);
         }
       }) ??
-      eatSwitch({
-        '++': (SpannedToken<MultiChar> operator) {
+      eatSwitch<MultiChar, Expr>({
+        '++': (operator) {
           final right = expect(prefix(), 'expression');
           if (right is! AssignTarget) {
-            throw GrammarException(
-                'right-hand side must be assignable', right.span);
+            throw SyntaxError(
+                'right-hand side must be assignable', operator.span,
+                primaryLabel: 'this implicitly assigns',
+                secondarySpans: {
+                  right.span: '... but this cannot be assigned to',
+                });
           }
           final span = operator.span.expand(right.span);
           return PrefixIncrement(span, right);
         },
-        '--': (SpannedToken<MultiChar> operator) {
+        '--': (operator) {
           final right = expect(prefix(), 'expression');
           if (right is! AssignTarget) {
-            throw GrammarException(
-                'right-hand side must be assignable', right.span);
+            throw SyntaxError(
+                'right-hand side must be assignable', operator.span,
+                primaryLabel: 'this implicitly assigns',
+                secondarySpans: {
+                  right.span: '... but this cannot be assigned to',
+                });
           }
           final span = operator.span.expand(right.span);
           return PrefixDecrement(span, right);
@@ -265,7 +279,7 @@ class Parser {
       }) ??
       postfix();
 
-  Expression? exponentiation() => fold(prefix(), (left) {
+  Expr? exponentiation() => fold(prefix(), (left) {
         final operator = multichar('**');
         if (operator == null) return null;
         final right = expect(exponentiation(), 'expression');
@@ -273,92 +287,92 @@ class Parser {
         return Exponentiate(span, left: left, right: right);
       });
 
-  Expression? multiplicative() => switchFold(exponentiation(), {
-        '*': (SpannedToken<Char> operator, left) {
+  Expr? multiplicative() => switchFold<Char, Expr>(exponentiation(), {
+        '*': (operator, left) {
           final right = expect(exponentiation(), 'expression');
           final span = left.span.expand(right.span);
           return Multiply(span, left: left, right: right);
         },
-        '/': (SpannedToken<Char> operator, left) {
+        '/': (operator, left) {
           final right = expect(exponentiation(), 'expression');
           final span = left.span.expand(right.span);
           return Divide(span, left: left, right: right);
         },
-        '%': (SpannedToken<Char> operator, left) {
+        '%': (operator, left) {
           final right = expect(exponentiation(), 'expression');
           final span = left.span.expand(right.span);
           return Modulo(span, left: left, right: right);
         }
       });
 
-  Expression? additive() => switchFold(multiplicative(), {
-        '+': (SpannedToken<Char> operator, left) {
+  Expr? additive() => switchFold<Char, Expr>(multiplicative(), {
+        '+': (Char operator, left) {
           final right = expect(multiplicative(), 'expression');
           final span = left.span.expand(right.span);
           return Add(span, left: left, right: right);
         },
-        '-': (SpannedToken<Char> operator, left) {
+        '-': (Char operator, left) {
           final right = expect(multiplicative(), 'expression');
           final span = left.span.expand(right.span);
           return Subtract(span, left: left, right: right);
         }
       });
 
-  Expression? bitwiseShift() => switchFold(additive(), {
-        '<<': (SpannedToken<MultiChar> operator, left) {
+  Expr? bitwiseShift() => switchFold<MultiChar, Expr>(additive(), {
+        '<<': (operator, left) {
           final right = expect(additive(), 'expression');
           final span = left.span.expand(right.span);
           return LeftShift(span, left: left, right: right);
         },
-        '>>': (SpannedToken<MultiChar> operator, left) {
+        '>>': (operator, left) {
           final right = expect(additive(), 'expression');
           final span = left.span.expand(right.span);
           return RightShift(span, left: left, right: right);
         }
       });
 
-  Expression? relational() => fold(
+  Expr? relational() => fold(
       bitwiseShift(),
       (left) =>
-          eatSwitch({
-            '<=': (SpannedToken<MultiChar> operator) {
+          eatSwitch<MultiChar, Expr>({
+            '<=': (operator) {
               final right = expect(bitwiseShift(), 'expression');
               final span = left.span.expand(right.span);
               return LesserEqual(span, left: left, right: right);
             },
-            '>=': (SpannedToken<MultiChar> operator) {
+            '>=': (operator) {
               final right = expect(bitwiseShift(), 'expression');
               final span = left.span.expand(right.span);
               return GreaterEqual(span, left: left, right: right);
             }
           }) ??
-          eatSwitch({
-            '<': (SpannedToken<Char> operator) {
+          eatSwitch<Char, Expr>({
+            '<': (operator) {
               final right = expect(bitwiseShift(), 'expression');
               final span = left.span.expand(right.span);
               return Lesser(span, left: left, right: right);
             },
-            '>': (SpannedToken<Char> operator) {
+            '>': (operator) {
               final right = expect(bitwiseShift(), 'expression');
               final span = left.span.expand(right.span);
               return Greater(span, left: left, right: right);
             }
           }));
 
-  Expression? equality() => switchFold(relational(), {
-        '==': (SpannedToken<MultiChar> operator, left) {
+  Expr? equality() => switchFold<MultiChar, Expr>(relational(), {
+        '==': (operator, left) {
           final right = expect(relational(), 'expression');
           final span = left.span.expand(right.span);
           return Equal(span, left: left, right: right);
         },
-        '!=': (SpannedToken<MultiChar> operator, left) {
+        '!=': (operator, left) {
           final right = expect(relational(), 'expression');
           final span = left.span.expand(right.span);
           return NotEqual(span, left: left, right: right);
         }
       });
 
-  Expression? bitwiseAnd() => fold(equality(), (left) {
+  Expr? bitwiseAnd() => fold(equality(), (left) {
         final operator = char('&');
         if (operator == null) return null;
         final right = expect(equality(), 'expression');
@@ -366,7 +380,7 @@ class Parser {
         return BitAnd(span, left: left, right: right);
       });
 
-  Expression? bitwiseOr() => fold(bitwiseAnd(), (left) {
+  Expr? bitwiseOr() => fold(bitwiseAnd(), (left) {
         final operator = char('|');
         if (operator == null) return null;
         final right = expect(equality(), 'expression');
@@ -374,7 +388,7 @@ class Parser {
         return BitOr(span, left: left, right: right);
       });
 
-  Expression? bitwiseXor() => fold(bitwiseOr(), (left) {
+  Expr? bitwiseXor() => fold(bitwiseOr(), (left) {
         final operator = char('^');
         if (operator == null) return null;
         final right = expect(equality(), 'expression');
@@ -382,7 +396,7 @@ class Parser {
         return BitXor(span, left: left, right: right);
       });
 
-  Expression? logicalAnd() => fold(bitwiseXor(), (left) {
+  Expr? logicalAnd() => fold(bitwiseXor(), (left) {
         final operator = multichar('&&');
         if (operator == null) return null;
         final right = expect(equality(), 'expression');
@@ -390,7 +404,7 @@ class Parser {
         return BitXor(span, left: left, right: right);
       });
 
-  Expression? logicalOr() => fold(logicalAnd(), (left) {
+  Expr? logicalOr() => fold(logicalAnd(), (left) {
         final operator = multichar('||');
         if (operator == null) return null;
         final right = expect(equality(), 'expression');
@@ -398,7 +412,7 @@ class Parser {
         return BitXor(span, left: left, right: right);
       });
 
-  Expression? ternary() => fold(logicalOr(), (left) {
+  Expr? ternary() => fold(logicalOr(), (left) {
         final operator = char('?');
         if (operator == null) return null;
 
@@ -409,7 +423,7 @@ class Parser {
         return Ternary(span, condition: left, ifTrue: ifTrue, ifFalse: ifFalse);
       });
 
-  Statement? assignment() {
+  Stmt? assignment() {
     final target = expression();
     if (target == null) return null;
 
@@ -425,13 +439,13 @@ class Parser {
     return Assign(span, target: target, value: value);
   }
 
-  Statement? declare() {
+  Stmt? declare() {
     final key = $var();
     if (key == null) return null;
 
-    final target = expect(variable(), 'variable name');
+    final target = expect(variable(), 'identifier');
 
-    Expression? value;
+    Expr? value;
     if (char('=') != null) {
       value = expect(expression(), 'expression');
     }
@@ -440,7 +454,7 @@ class Parser {
     return VariableDefine(span, target: target, value: value);
   }
 
-  Statement? statement() => declare() ?? assignment() ?? expression();
+  Stmt? statement() => declare() ?? assignment() ?? expression();
 
-  Expression? expression() => ternary();
+  Expr? expression() => ternary();
 }

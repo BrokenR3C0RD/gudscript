@@ -1,11 +1,4 @@
-import 'package:gudscript/src/tokens.dart';
 import 'package:source_span/source_span.dart';
-
-extension SpannedTokenMapExtension<T extends Token, N> on SpannedToken<T> {
-  N? map(N? Function(T, FileSpan) convert) => convert(token, span);
-
-  SpannedToken<T>? where(bool Function(T) test) => test(token) ? this : null;
-}
 
 extension on String {
   String indent() => split('\n')
@@ -23,36 +16,37 @@ abstract class Node {
   String toString() => '$runtimeType[${span.start.toolString}]';
 }
 
-abstract class Statement extends Node {
-  Statement(super.span);
+abstract class Stmt extends Node {
+  Stmt(super.span);
 }
 
-abstract class Expression extends Statement {
-  Expression(super.span);
+abstract class Expr extends Stmt {
+  Expr(super.span);
 }
 
-abstract class UnaryExpression extends Expression {
-  final Expression expression;
+abstract class UnaryExpression extends Expr {
+  final Expr expression;
   UnaryExpression(super.span, {required this.expression});
 
   @override
-  String toString() =>
-      '${super.toString()}:\n${expression.toString().indent()}';
+  String toString() => '${super.toString()}:\n'
+      '    ${expression.toString().indent()}';
 }
 
-abstract class BinaryExpression extends Expression {
-  final Expression left;
-  final Expression right;
+abstract class BinaryExpression extends Expr {
+  final Expr left;
+  final Expr right;
 
   BinaryExpression(super.span, {required this.left, required this.right});
   @override
-  String toString() =>
-      '${super.toString()}:\n  Left: ${left.toString().indent()}\n  Right: ${right.toString().indent()}';
+  String toString() => '${super.toString()}:\n'
+      '    Left: ${left.toString().indent()}\n'
+      '    Right: ${right.toString().indent()}';
 }
 
-mixin AssignTarget on Expression {}
+mixin AssignTarget on Expr {}
 
-final class Variable extends Expression with AssignTarget {
+final class Variable extends Expr with AssignTarget {
   final String name;
 
   Variable(super.span, this.name);
@@ -61,7 +55,7 @@ final class Variable extends Expression with AssignTarget {
   String toString() => '${super.toString()} = $name';
 }
 
-final class Number extends Expression {
+final class Number extends Expr {
   final num value;
 
   Number(super.span, this.value);
@@ -70,7 +64,7 @@ final class Number extends Expression {
   String toString() => '${super.toString()} = $value';
 }
 
-final class Boolean extends Expression {
+final class Boolean extends Expr {
   final bool value;
 
   Boolean(super.span, this.value);
@@ -79,21 +73,21 @@ final class Boolean extends Expression {
   String toString() => '${super.toString()} = $value';
 }
 
-final class MemberAccess extends Expression with AssignTarget {
-  final Expression parent;
-  final Expression property;
+final class MemberAccess extends Expr with AssignTarget {
+  final Expr parent;
+  final Expr property;
 
   MemberAccess(super.span, {required this.parent, required this.property});
 
   @override
   String toString() => '${super.toString()}:\n'
-      '  Parent: ${parent.toString().indent()}\n'
-      '  Property: ${property.toString().indent()}';
+      '    Parent: ${parent.toString().indent()}\n'
+      '    Property: ${property.toString().indent()}';
 }
 
-final class FunctionCall extends Expression {
-  final Expression callee;
-  final List<Expression> parameters;
+final class FunctionCall extends Expr {
+  final Expr callee;
+  final List<Expr> parameters;
 
   FunctionCall(super.span, {required this.callee, required this.parameters});
 
@@ -103,7 +97,7 @@ final class FunctionCall extends Expression {
       ')';
 }
 
-final class PostfixIncrement extends Expression {
+final class PostfixIncrement extends Expr {
   final AssignTarget target;
 
   PostfixIncrement(super.span, this.target);
@@ -112,7 +106,7 @@ final class PostfixIncrement extends Expression {
   String toString() => '${super.toString()}: ${target.toString().indent()})';
 }
 
-final class PostfixDecrement extends Expression {
+final class PostfixDecrement extends Expr {
   final AssignTarget target;
 
   PostfixDecrement(super.span, this.target);
@@ -121,7 +115,7 @@ final class PostfixDecrement extends Expression {
   String toString() => '${super.toString()}: ${target.toString().indent()})';
 }
 
-final class PrefixIncrement extends Expression {
+final class PrefixIncrement extends Expr {
   final AssignTarget target;
 
   PrefixIncrement(super.span, this.target);
@@ -130,7 +124,7 @@ final class PrefixIncrement extends Expression {
   String toString() => '${super.toString()}: ${target.toString().indent()})';
 }
 
-final class PrefixDecrement extends Expression {
+final class PrefixDecrement extends Expr {
   final AssignTarget target;
 
   PrefixDecrement(super.span, this.target);
@@ -223,10 +217,10 @@ final class LogicalOr extends BinaryExpression {
   LogicalOr(super.span, {required super.left, required super.right});
 }
 
-final class Ternary extends Expression {
-  final Expression condition;
-  final Expression ifTrue;
-  final Expression ifFalse;
+final class Ternary extends Expr {
+  final Expr condition;
+  final Expr ifTrue;
+  final Expr ifFalse;
 
   Ternary(super.span,
       {required this.condition, required this.ifTrue, required this.ifFalse});
@@ -238,9 +232,9 @@ final class Ternary extends Expression {
       '  If `false`: ${ifFalse.toString().indent()})';
 }
 
-final class VariableDefine extends Statement {
+final class VariableDefine extends Stmt {
   final Variable target;
-  final Expression? value;
+  final Expr? value;
 
   VariableDefine(super.span, {required this.target, this.value});
 
@@ -250,9 +244,9 @@ final class VariableDefine extends Statement {
       '  Value: ${value.toString().indent()}';
 }
 
-final class Assign extends Statement {
+final class Assign extends Stmt {
   final AssignTarget target;
-  final Expression value;
+  final Expr value;
 
   Assign(super.span, {required this.target, required this.value});
 }
