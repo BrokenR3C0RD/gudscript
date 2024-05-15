@@ -1,3 +1,17 @@
+//  Copyright 2024 MasterR3C0RD
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 import 'package:gudscript/src/error.dart';
 import 'package:gudscript/src/lexer.dart';
 import 'package:gudscript/src/nodes.dart';
@@ -210,7 +224,7 @@ class Parser {
 
   Expr? postfix() => switchFold<MultiChar, Expr>(accessCall(), {
         '++': (operator, left) {
-          if (left is! AssignTarget) {
+          if (left is! Assignable) {
             throw SyntaxError(
                 'left-hand side must be assignable', operator.span,
                 primaryLabel: 'this implicitly assigns',
@@ -223,7 +237,7 @@ class Parser {
           return PostfixIncrement(span, left);
         },
         '--': (operator, left) {
-          if (left is! AssignTarget) {
+          if (left is! Assignable) {
             throw SyntaxError(
                 'left-hand side must be assignable', operator.span,
                 primaryLabel: 'this implicitly assigns',
@@ -252,7 +266,7 @@ class Parser {
       eatSwitch<MultiChar, Expr>({
         '++': (operator) {
           final right = expect(prefix(), 'expression');
-          if (right is! AssignTarget) {
+          if (right is! Assignable) {
             throw SyntaxError(
                 'right-hand side must be assignable', operator.span,
                 primaryLabel: 'this implicitly assigns',
@@ -265,7 +279,7 @@ class Parser {
         },
         '--': (operator) {
           final right = expect(prefix(), 'expression');
-          if (right is! AssignTarget) {
+          if (right is! Assignable) {
             throw SyntaxError(
                 'right-hand side must be assignable', operator.span,
                 primaryLabel: 'this implicitly assigns',
@@ -427,7 +441,7 @@ class Parser {
     final target = expression();
     if (target == null) return null;
 
-    if (target is! AssignTarget) {
+    if (target is! Assignable) {
       return target;
     }
 

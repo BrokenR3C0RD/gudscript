@@ -1,3 +1,17 @@
+//  Copyright 2024 MasterR3C0RD
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 import 'package:source_span/source_span.dart';
 
 extension on String {
@@ -24,29 +38,43 @@ abstract class Expr extends Stmt {
   Expr(super.span);
 }
 
-abstract class UnaryExpression extends Expr {
+enum BlockType {
+  normal,
+  loop,
+  when,
+  function,
+}
+
+class Block extends Stmt {
+  final BlockType type;
+  final List<Stmt> statements;
+
+  Block(super.span, this.type, this.statements);
+}
+
+abstract class UnaryExpr extends Expr {
   final Expr expression;
-  UnaryExpression(super.span, {required this.expression});
+  UnaryExpr(super.span, {required this.expression});
 
   @override
   String toString() => '${super.toString()}:\n'
       '    ${expression.toString().indent()}';
 }
 
-abstract class BinaryExpression extends Expr {
+abstract class BinaryExpr extends Expr {
   final Expr left;
   final Expr right;
 
-  BinaryExpression(super.span, {required this.left, required this.right});
+  BinaryExpr(super.span, {required this.left, required this.right});
   @override
   String toString() => '${super.toString()}:\n'
       '    Left: ${left.toString().indent()}\n'
       '    Right: ${right.toString().indent()}';
 }
 
-mixin AssignTarget on Expr {}
+mixin Assignable on Expr {}
 
-final class Variable extends Expr with AssignTarget {
+final class Variable extends Expr with Assignable {
   final String name;
 
   Variable(super.span, this.name);
@@ -73,7 +101,7 @@ final class Boolean extends Expr {
   String toString() => '${super.toString()} = $value';
 }
 
-final class MemberAccess extends Expr with AssignTarget {
+final class MemberAccess extends Expr with Assignable {
   final Expr parent;
   final Expr property;
 
@@ -98,7 +126,7 @@ final class FunctionCall extends Expr {
 }
 
 final class PostfixIncrement extends Expr {
-  final AssignTarget target;
+  final Assignable target;
 
   PostfixIncrement(super.span, this.target);
 
@@ -107,7 +135,7 @@ final class PostfixIncrement extends Expr {
 }
 
 final class PostfixDecrement extends Expr {
-  final AssignTarget target;
+  final Assignable target;
 
   PostfixDecrement(super.span, this.target);
 
@@ -116,7 +144,7 @@ final class PostfixDecrement extends Expr {
 }
 
 final class PrefixIncrement extends Expr {
-  final AssignTarget target;
+  final Assignable target;
 
   PrefixIncrement(super.span, this.target);
 
@@ -125,7 +153,7 @@ final class PrefixIncrement extends Expr {
 }
 
 final class PrefixDecrement extends Expr {
-  final AssignTarget target;
+  final Assignable target;
 
   PrefixDecrement(super.span, this.target);
 
@@ -133,87 +161,87 @@ final class PrefixDecrement extends Expr {
   String toString() => '${super.toString()}: ${target.toString().indent()})';
 }
 
-final class Not extends UnaryExpression {
+final class Not extends UnaryExpr {
   Not(super.span, {required super.expression});
 }
 
-final class Negate extends UnaryExpression {
+final class Negate extends UnaryExpr {
   Negate(super.span, {required super.expression});
 }
 
-final class Exponentiate extends BinaryExpression {
+final class Exponentiate extends BinaryExpr {
   Exponentiate(super.span, {required super.left, required super.right});
 }
 
-final class Multiply extends BinaryExpression {
+final class Multiply extends BinaryExpr {
   Multiply(super.span, {required super.left, required super.right});
 }
 
-final class Divide extends BinaryExpression {
+final class Divide extends BinaryExpr {
   Divide(super.span, {required super.left, required super.right});
 }
 
-final class Modulo extends BinaryExpression {
+final class Modulo extends BinaryExpr {
   Modulo(super.span, {required super.left, required super.right});
 }
 
-final class Add extends BinaryExpression {
+final class Add extends BinaryExpr {
   Add(super.span, {required super.left, required super.right});
 }
 
-final class Subtract extends BinaryExpression {
+final class Subtract extends BinaryExpr {
   Subtract(super.span, {required super.left, required super.right});
 }
 
-final class LeftShift extends BinaryExpression {
+final class LeftShift extends BinaryExpr {
   LeftShift(super.span, {required super.left, required super.right});
 }
 
-final class RightShift extends BinaryExpression {
+final class RightShift extends BinaryExpr {
   RightShift(super.span, {required super.left, required super.right});
 }
 
-final class LesserEqual extends BinaryExpression {
+final class LesserEqual extends BinaryExpr {
   LesserEqual(super.span, {required super.left, required super.right});
 }
 
-final class GreaterEqual extends BinaryExpression {
+final class GreaterEqual extends BinaryExpr {
   GreaterEqual(super.span, {required super.left, required super.right});
 }
 
-final class Lesser extends BinaryExpression {
+final class Lesser extends BinaryExpr {
   Lesser(super.span, {required super.left, required super.right});
 }
 
-final class Greater extends BinaryExpression {
+final class Greater extends BinaryExpr {
   Greater(super.span, {required super.left, required super.right});
 }
 
-final class Equal extends BinaryExpression {
+final class Equal extends BinaryExpr {
   Equal(super.span, {required super.left, required super.right});
 }
 
-final class NotEqual extends BinaryExpression {
+final class NotEqual extends BinaryExpr {
   NotEqual(super.span, {required super.left, required super.right});
 }
 
-final class BitAnd extends BinaryExpression {
+final class BitAnd extends BinaryExpr {
   BitAnd(super.span, {required super.left, required super.right});
 }
 
-final class BitOr extends BinaryExpression {
+final class BitOr extends BinaryExpr {
   BitOr(super.span, {required super.left, required super.right});
 }
 
-final class BitXor extends BinaryExpression {
+final class BitXor extends BinaryExpr {
   BitXor(super.span, {required super.left, required super.right});
 }
 
-final class LogicalAnd extends BinaryExpression {
+final class LogicalAnd extends BinaryExpr {
   LogicalAnd(super.span, {required super.left, required super.right});
 }
 
-final class LogicalOr extends BinaryExpression {
+final class LogicalOr extends BinaryExpr {
   LogicalOr(super.span, {required super.left, required super.right});
 }
 
@@ -245,7 +273,7 @@ final class VariableDefine extends Stmt {
 }
 
 final class Assign extends Stmt {
-  final AssignTarget target;
+  final Assignable target;
   final Expr value;
 
   Assign(super.span, {required this.target, required this.value});
